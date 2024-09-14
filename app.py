@@ -10,6 +10,7 @@ import google.generativeai as genai
 import json
 import urllib.parse
 import time
+import chromadb
 
 # Load environment variables
 load_dotenv()
@@ -43,8 +44,15 @@ embeddings = OpenAIEmbeddings(
     chunk_size=1000  # Process 1000 texts at a time
 )
 
+# Initialize Chroma persistent client
+chroma_client = chromadb.PersistentClient(path="./chroma_db")
+
 # Initialize Chroma vector store
-vectorstore = Chroma(embedding_function=embeddings, persist_directory="./chroma_db")
+vectorstore = Chroma(
+    client=chroma_client,
+    collection_name="cc_search",
+    embedding_function=embeddings
+)
 
 def rewrite_query(question):
     prompt = f"""
