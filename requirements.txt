@@ -1,0 +1,12 @@
+streamlit
+langchain
+langchain-community
+langchain-openai
+langchain-chroma
+google-generativeai
+google-api-python-client
+chromadb
+requests
+beautifulsoup4
+python-dotenv
+openai
