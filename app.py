@@ -1,7 +1,7 @@
 import streamlit as st
+from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import Chroma
-from langchain_community.embeddings import OpenAIEmbeddings
-from langchain.text_splitter import CharacterTextSplitter
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 import requests
 from bs4 import BeautifulSoup
 import os
@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 import google.generativeai as genai
 import json
 import urllib.parse
+import time
 
 # Load environment variables
 load_dotenv()
@@ -35,16 +36,22 @@ model = genai.GenerativeModel(
     generation_config=generation_config,
 )
 
-# Initialize OpenAI Embeddings with the specific model
-embeddings = OpenAIEmbeddings(model="text-embedding-3-small", openai_api_key=openai_api_key)
+# Initialize OpenAI Embeddings with the specific model and batch size
+embeddings = OpenAIEmbeddings(
+    model="text-embedding-3-small",
+    openai_api_key=openai_api_key,
+    chunk_size=1000  # Process 1000 texts at a time
+)
 
 # Initialize Chroma vector store
-vectorstore = Chroma(embedding_function=embeddings)
+vectorstore = Chroma(embedding_function=embeddings, persist_directory="./chroma_db")
 
 def rewrite_query(question):
     prompt = f"""
+    You are a helpful assistant that rewrites user questions into concise search queries
+    Your goal is to help the user search the Colorado College website. It is currently the 2024-25 academic year.
     Rewrite the following question as a short, concise search query suitable for a search engine. 
-    The query should be no more than 5-7 words long and focus on the key information needed.
+    The query should be no more than 10 words long and focus on the key information needed.
     Do not include any explanations or multiple options. Just provide the single best search query.
 
     Question: {question}
@@ -59,14 +66,16 @@ def rewrite_query(question):
 
 def google_search(query, num_results=5):
     encoded_query = urllib.parse.quote(query)
-    url = f"https://customsearch.googleapis.com/customsearch/v1?key={google_api_key}&cx={google_cse_id}&q={encoded_query}&num={num_results}"
+    url = f"https://customsearch.googleapis.com/customsearch/v1?key={google_api_key}&cx={google_cse_id}&q={encoded_query}&num={num_results}&fileType=-pdf"
     response = requests.get(url)
     print(f"Google Search URL: {url}")
     print(f"Google Search Response Status Code: {response.status_code}")
     if response.status_code == 200:
         results = json.loads(response.text)
-        print(f"Number of search results: {len(results.get('items', []))}")
-        return results
+        items = [item for item in results.get('items', []) if not item['link'].lower().endswith('.pdf')]
+        items = items[:5]  # Limit to top 5 results
+        print(f"Number of search results (excluding PDFs): {len(items)}")
+        return items
     else:
         print(f"Search request failed with status code: {response.status_code}")
         print(f"Response content: {response.text}")
@@ -76,14 +85,18 @@ def scrape_and_parse(url):
     print(f"Scraping URL: {url}")
     response = requests.get(url)
     soup = BeautifulSoup(response.text, 'html.parser')
-    text = soup.get_text()
+    content_div = soup.select_one('div.container.cc-subsite-content')
+    if content_div:
+        text = content_div.get_text(strip=True)
+    else:
+        text = soup.get_text(strip=True)
     print(f"Scraped text length: {len(text)} characters")
     return text
 
 def process_search_results(results):
     texts = []
     source_urls = []
-    for item in results.get('items', []):
+    for item in results:
         url = item.get('link')
         if url:
             try:
@@ -96,10 +109,19 @@ def process_search_results(results):
 
     print(f"Number of successfully processed URLs: {len(source_urls)}")
     if texts:
-        text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
+        text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=1000,
+            chunk_overlap=100,
+            length_function=len,
+            is_separator_regex=False,
+        )
         docs = text_splitter.create_documents(texts)
         print(f"Number of documents created: {len(docs)}")
-        vectorstore.add_documents(docs)
+        
+        # Add documents in one batch
+        with st.spinner("Adding documents to vector store..."):
+            vectorstore.add_documents(docs)
+        print("All documents processed and added to vector store")
     else:
         print("No texts were successfully processed")
 
@@ -107,6 +129,7 @@ def process_search_results(results):
 
 def generate_answer(question, context):
     prompt = f"Question: {question}\n\nContext: {context}\n\nAnswer:"
+    print(f"Prompt for final answer: {prompt}")
     response = model.generate_content(prompt)
     answer = response.text
     print(f"Generated answer length: {len(answer)} characters")
@@ -130,11 +153,13 @@ def main():
             search_query = rewrite_query(question)
             search_results = google_search(search_query)
             
-            if 'items' not in search_results or len(search_results['items']) == 0:
+            if not search_results:
                 st.write("No search results found. Please try a different question.")
                 print("No search results found.")
                 return
             
+            progress_text = st.empty()
+            progress_text.text("Processing search results...")
             source_urls = process_search_results(search_results)
             
             if not source_urls:
@@ -142,13 +167,16 @@ def main():
                 print("No valid search results found.")
                 return
 
+            progress_text.text("Retrieving relevant documents...")
             relevant_docs = vectorstore.similarity_search(question, k=3)
             print(f"Number of relevant documents retrieved: {len(relevant_docs)}")
             context = "\n".join([doc.page_content for doc in relevant_docs])
             
+            progress_text.text("Generating answer...")
             answer = generate_answer(question, context)
             followup_questions = generate_followup_questions(question, answer)
             
+            progress_text.empty()
             st.write("Answer:", answer)
             st.write("Sources:")
             for url in source_urls:
