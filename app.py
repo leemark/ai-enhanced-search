@@ -66,6 +66,7 @@ vectorstore = Chroma(
     embedding_function=embeddings
 )
 
+@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
 def rewrite_query(question):
     prompt = f"""
     You are a web search query expert who rewrites user questions into concise search queries
@@ -77,13 +78,16 @@ def rewrite_query(question):
 
     Question: {question}
 
-    Search Query:"""
-    
-    response = model.generate_content(prompt)
-    rewritten_query = response.text.strip()
-    print(f"Original question: {question}")
-    print(f"Rewritten query: {rewritten_query}")
-    return rewritten_query
+    Search Query:"""    
+    try:
+        response = model.generate_content(prompt)
+        rewritten_query = response.text.strip()
+        print(f"Original question: {question}")
+        print(f"Rewritten query: {rewritten_query}")
+        return rewritten_query
+    except Exception as e:
+        print(f"Error in rewrite_query: {e}")
+        raise
 
 def google_search(query, num_results=5):
     encoded_query = urllib.parse.quote(query)
@@ -148,6 +152,7 @@ def process_search_results(results):
 
     return docs  # Return the documents instead of just the source URLs
 
+@retry(stop=stop_after_attempt(4), wait=wait_exponential(multiplier=1, min=4, max=10))
 def generate_answer(question, context, sources):
     prompt = f"""You are a helpful assistant that answers questions about Colorado College based on information from the CC website. It is currently the 2024-25 academic year. 
 
@@ -199,6 +204,7 @@ Answer:"""
     
     return answer, insufficient_info, used_sources
 
+@retry(stop=stop_after_attempt(4), wait=wait_exponential(multiplier=1, min=4, max=10))
 def generate_followup_questions(question, answer):
     prompt = f"""Based on the question '{question}' and the answer '{answer}', generate 2-3 relevant related questions. 
     The user likely to be a prospective student or parent, so think about what questions might be relevant to them.
