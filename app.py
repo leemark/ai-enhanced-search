@@ -67,10 +67,11 @@ vectorstore = Chroma(
 
 def rewrite_query(question):
     prompt = f"""
-    You are a helpful assistant that rewrites user questions into concise search queries
-    Your goal is to help the user search the Colorado College website. It is currently the 2024-25 academic year.
+    You are a web search query expert who rewrites user questions into concise search queries
+    Your goal is to help the user search the Colorado College website. It is currently the 2024-25 academic year, include this in the queryonly if relevant.
     Rewrite the following question as a short, concise search query suitable for a search engine. 
-    The query should be no more than 10 words long and focus on the key information needed.
+    The query should be brief and will focus on the key information needed. 
+    It needs to be expertly crafted to retrieve the most relevant possible results given the users question.
     Do not include any explanations or multiple options. Just provide the single best search query.
 
     Question: {question}
@@ -169,11 +170,23 @@ Third follow-up question"""
 def main():
     st.title("Ask CC")
     
-    with st.form(key='search_form'):
-        question = st.text_input("Enter your question:")
-        submit_button = st.form_submit_button(label='Search')
+    # Use session state to store the current question and a flag for updates
+    if 'current_question' not in st.session_state:
+        st.session_state.current_question = ""
+    if 'update_question' not in st.session_state:
+        st.session_state.update_question = False
+
+    # Function to update the question
+    def update_question(new_question):
+        st.session_state.current_question = new_question
+        st.session_state.update_question = True
+
+    # Text input for the question
+    question = st.text_input("Enter your question:", value=st.session_state.current_question, key="question_input")
     
-    if submit_button or question:  # This will trigger on button click or Enter key
+    # Search button
+    if st.button('Search') or st.session_state.update_question:
+        st.session_state.update_question = False
         with st.spinner("Searching for an answer..."):
             print(f"Processing question: {question}")
             search_query = rewrite_query(question)
@@ -209,8 +222,8 @@ def main():
                 st.write(url)
             
             st.write("Follow-up questions:")
-            for q in followup_questions:
-                st.write(q)
+            for i, q in enumerate(followup_questions):
+                st.button(q, key=f"followup_{i}", on_click=update_question, args=(q,))
 
 if __name__ == "__main__":
     main()
