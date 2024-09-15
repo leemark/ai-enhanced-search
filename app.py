@@ -143,7 +143,7 @@ def process_search_results(results):
     return source_urls
 
 def generate_answer(question, context):
-    prompt = f"Question: {question}\n\nContext: {context}\n\nAnswer:"
+    prompt = f"You are a helpful assistant that answers questions about Colorado College based on context from the CC website. It is currently the 2024-25 academic year. Question: {question}\n\nContext: {context}\n\nAnswer:"
     print(f"Prompt for final answer: {prompt}")
     response = model.generate_content(prompt)
     answer = response.text
