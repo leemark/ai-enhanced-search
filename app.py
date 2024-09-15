@@ -185,12 +185,13 @@ Answer:"""
     return answer, insufficient_info, used_sources
 
 def generate_followup_questions(question, answer):
-    prompt = f"""Based on the question '{question}' and the answer '{answer}', generate 3 relevant follow-up questions.
+    prompt = f"""Based on the question '{question}' and the answer '{answer}', generate 2-3 relevant related questions. 
+    The user likely to be a prospective student or parent, so think about what questions might be relevant to them.
 Output only the questions, one per line, without numbering or explanations.
 Example format:
-First follow-up question
-Second follow-up question
-Third follow-up question"""
+First related question
+Second related question
+Third related question"""
     response = model.generate_content(prompt)
     followup_questions = response.text.strip().split('\n')
     print(f"Number of follow-up questions generated: {len(followup_questions)}")
