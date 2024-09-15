@@ -135,7 +135,7 @@ def process_search_results(results):
             length_function=len,
             is_separator_regex=False,
         )
-        docs = text_splitter.create_documents(texts)
+        docs = text_splitter.create_documents(texts, metadatas=[{"source": url} for url in source_urls])
         print(f"Number of documents created: {len(docs)}")
         
         # Add documents in one batch
@@ -145,9 +145,9 @@ def process_search_results(results):
     else:
         print("No texts were successfully processed")
 
-    return source_urls
+    return docs  # Return the documents instead of just the source URLs
 
-def generate_answer(question, context):
+def generate_answer(question, context, sources):
     prompt = f"""You are a helpful assistant that answers questions about Colorado College based on information from the CC website. It is currently the 2024-25 academic year. 
 
 Question: {question}
@@ -155,9 +155,10 @@ Question: {question}
 Context: {context}
 
 Instructions:
-1. If you have enough information to answer the question confidently and accurately, provide a direct answer without mentioning the context.
-2. If you don't have enough information to answer the question appropriately, respond with a brief statement indicating that you don't have sufficient information to provide an accurate answer.
-3. Do NOT make up information or guess if you're unsure.
+1. If you have enough information to answer the question confidently and accurately, provide a direct answer.
+2. When using information from the context, cite the source in order using [1], [2], etc., corresponding to the order of sources used.
+3. If you don't have enough information to answer the question appropriately, respond with a brief statement indicating that you don't have sufficient information to provide an accurate answer.
+4. Do NOT make up information or guess if you're unsure.
 
 Answer:"""
 
@@ -175,7 +176,13 @@ Answer:"""
         "do not have enough information"
     ])
     
-    return answer, insufficient_info
+    # Extract used sources in the order they were cited
+    used_sources = []
+    for i, source in enumerate(sources, start=1):
+        if f"[{i}]" in answer:
+            used_sources.append(source)
+    
+    return answer, insufficient_info, used_sources
 
 def generate_followup_questions(question, answer):
     prompt = f"""Based on the question '{question}' and the answer '{answer}', generate 3 relevant follow-up questions.
@@ -190,7 +197,7 @@ Third follow-up question"""
     return followup_questions
 
 def main():
-    st.title("Ask CC")
+    st.title("Ask Colorado College 🐯")
     
     # Use session state to store the current question and a flag for updates
     if 'current_question' not in st.session_state:
@@ -221,9 +228,9 @@ def main():
             
             progress_text = st.empty()
             progress_text.text("Processing search results...")
-            source_urls = process_search_results(search_results)
+            docs = process_search_results(search_results)
             
-            if not source_urls:
+            if not docs:
                 st.write("No valid search results found.")
                 print("No valid search results found.")
                 return
@@ -231,23 +238,26 @@ def main():
             progress_text.text("Retrieving relevant documents...")
             relevant_docs = vectorstore.similarity_search(question, k=3)
             print(f"Number of relevant documents retrieved: {len(relevant_docs)}")
-            context = "\n".join([doc.page_content for doc in relevant_docs])
+            context = "\n".join([f"[{i+1}] {doc.page_content}" for i, doc in enumerate(relevant_docs)])
+            
+            # Safely extract sources, using a default value if 'source' is not in metadata
+            sources = [doc.metadata.get('source', f"Source {i+1}") for i, doc in enumerate(relevant_docs)]
             
             progress_text.text("Generating answer...")
-            answer, insufficient_info = generate_answer(question, context)
+            answer, insufficient_info, used_sources = generate_answer(question, context, sources)
             
             progress_text.empty()
             st.write("Answer:", answer)
 
-            if not insufficient_info:
-                st.write("Sources:")
-                for url in source_urls:
-                    st.write(url)
-                
-                followup_questions = generate_followup_questions(question, answer)
-                st.write("Follow-up questions:")
-                for i, q in enumerate(followup_questions):
-                    st.button(q, key=f"followup_{i}", on_click=update_question, args=(q,))
+            followup_questions = generate_followup_questions(question, answer)
+            st.write("Related questions:")
+            for i, q in enumerate(followup_questions):
+                st.button(q, key=f"followup_{i}", on_click=update_question, args=(q,))
+
+            if not insufficient_info and used_sources:
+                st.write("Sources used:")
+                for i, url in enumerate(used_sources, start=1):
+                    st.write(f"[{i}] {url}")
 
 if __name__ == "__main__":
     main()
