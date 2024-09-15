@@ -1,8 +1,12 @@
 import sys
 import importlib
 
-__import__('pysqlite3')
-sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+try:
+    import pysqlite3
+    sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+except ImportError:
+    pass  # If pysqlite3 is not available, we'll use the system sqlite3
+
 
 
 import streamlit as st
@@ -40,7 +44,7 @@ generation_config = {
 }
 
 model = genai.GenerativeModel(
-    model_name="gemini-1.5-pro-exp-0827",
+    model_name="gemini-1.5-flash-exp-0827",
     generation_config=generation_config,
 )
 
