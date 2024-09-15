@@ -148,12 +148,34 @@ def process_search_results(results):
     return source_urls
 
 def generate_answer(question, context):
-    prompt = f"You are a helpful assistant that answers questions about Colorado College based on information from the CC website. It is currently the 2024-25 academic year. Please don't use language like 'based on the provided context' just answer the question directly.  Question: {question}\n\nContext: {context}\n\nAnswer:"
+    prompt = f"""You are a helpful assistant that answers questions about Colorado College based on information from the CC website. It is currently the 2024-25 academic year. 
+
+Question: {question}
+
+Context: {context}
+
+Instructions:
+1. If you have enough information to answer the question confidently and accurately, provide a direct answer without mentioning the context.
+2. If you don't have enough information to answer the question appropriately, respond with a brief statement indicating that you don't have sufficient information to provide an accurate answer.
+3. Do not make up information or guess if you're unsure.
+
+Answer:"""
+
     print(f"Prompt for final answer: {prompt}")
     response = model.generate_content(prompt)
-    answer = response.text
+    answer = response.text.strip()
     print(f"Generated answer length: {len(answer)} characters")
-    return answer
+    
+    # Check if the answer indicates insufficient information
+    insufficient_info = any(phrase in answer.lower() for phrase in [
+        "don't have enough information",
+        "don't have sufficient information",
+        "provided text does not",
+        "cannot answer this question",
+        "insufficient information"
+    ])
+    
+    return answer, insufficient_info
 
 def generate_followup_questions(question, answer):
     prompt = f"""Based on the question '{question}' and the answer '{answer}', generate 3 relevant follow-up questions.
@@ -212,18 +234,20 @@ def main():
             context = "\n".join([doc.page_content for doc in relevant_docs])
             
             progress_text.text("Generating answer...")
-            answer = generate_answer(question, context)
-            followup_questions = generate_followup_questions(question, answer)
+            answer, insufficient_info = generate_answer(question, context)
             
             progress_text.empty()
             st.write("Answer:", answer)
-            st.write("Sources:")
-            for url in source_urls:
-                st.write(url)
-            
-            st.write("Follow-up questions:")
-            for i, q in enumerate(followup_questions):
-                st.button(q, key=f"followup_{i}", on_click=update_question, args=(q,))
+
+            if not insufficient_info:
+                st.write("Sources:")
+                for url in source_urls:
+                    st.write(url)
+                
+                followup_questions = generate_followup_questions(question, answer)
+                st.write("Follow-up questions:")
+                for i, q in enumerate(followup_questions):
+                    st.button(q, key=f"followup_{i}", on_click=update_question, args=(q,))
 
 if __name__ == "__main__":
     main()
