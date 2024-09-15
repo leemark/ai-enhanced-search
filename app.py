@@ -157,7 +157,7 @@ Context: {context}
 Instructions:
 1. If you have enough information to answer the question confidently and accurately, provide a direct answer without mentioning the context.
 2. If you don't have enough information to answer the question appropriately, respond with a brief statement indicating that you don't have sufficient information to provide an accurate answer.
-3. Do not make up information or guess if you're unsure.
+3. Do NOT make up information or guess if you're unsure.
 
 Answer:"""
 
@@ -172,7 +172,7 @@ Answer:"""
         "don't have sufficient information",
         "provided text does not",
         "cannot answer this question",
-        "insufficient information"
+        "do not have enough information"
     ])
     
     return answer, insufficient_info
