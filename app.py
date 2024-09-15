@@ -155,18 +155,25 @@ def generate_answer(question, context):
     return answer
 
 def generate_followup_questions(question, answer):
-    prompt = f"Based on the question '{question}' and the answer '{answer}', generate 3 relevant follow-up questions:"
+    prompt = f"""Based on the question '{question}' and the answer '{answer}', generate 3 relevant follow-up questions.
+Output only the questions, one per line, without numbering or explanations.
+Example format:
+First follow-up question
+Second follow-up question
+Third follow-up question"""
     response = model.generate_content(prompt)
-    followup_questions = response.text.split('\n')
+    followup_questions = response.text.strip().split('\n')
     print(f"Number of follow-up questions generated: {len(followup_questions)}")
     return followup_questions
 
 def main():
     st.title("Ask CC")
     
-    question = st.text_input("Enter your question:")
+    with st.form(key='search_form'):
+        question = st.text_input("Enter your question:")
+        submit_button = st.form_submit_button(label='Search')
     
-    if st.button("Search"):
+    if submit_button or question:  # This will trigger on button click or Enter key
         with st.spinner("Searching for an answer..."):
             print(f"Processing question: {question}")
             search_query = rewrite_query(question)
