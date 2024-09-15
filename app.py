@@ -1,5 +1,7 @@
 import sys
 import importlib
+import time
+from tenacity import retry, stop_after_attempt, wait_exponential
 
 try:
     import pysqlite3
@@ -20,7 +22,6 @@ from dotenv import load_dotenv
 import google.generativeai as genai
 import json
 import urllib.parse
-import time
 import chromadb
 
 # Load environment variables
@@ -156,9 +157,22 @@ Context: {context}
 
 Instructions:
 1. If you have enough information to answer the question confidently and accurately, provide a direct answer.
-2. When using information from the context, cite the source in order using [1], [2], etc., corresponding to the order of sources used.
+2. When using information from the context, cite the source using [1], [2], etc. Use each source only once, in the order they appear in the context. ONLY cite sources that are in the context and are used in your answer.
 3. If you don't have enough information to answer the question appropriately, respond with a brief statement indicating that you don't have sufficient information to provide an accurate answer.
 4. Do NOT make up information or guess if you're unsure.
+5. Don't add any HTML tags to your response.
+
+Here are some examples of how to properly cite sources:
+
+Example 1:
+Question: What are the housing options for first-year students at Colorado College?
+Answer: First-year students at Colorado College are required to live in one of the "Big 3" traditional halls: Mathias Hall, Loomis Hall, or South Hall [1]. These residence halls provide a supportive community environment for new students [2].
+
+Example 2:
+Question: How many blocks are in the academic year at Colorado College?
+Answer: Colorado College operates on a unique Block Plan, where the academic year consists of 8 blocks [1]. Each block is 3.5 weeks long, allowing students to focus intensively on one subject at a time [2].
+
+Now, please answer the given question using the provided context and following the instructions above.
 
 Answer:"""
 
@@ -166,6 +180,7 @@ Answer:"""
     response = model.generate_content(prompt)
     answer = response.text.strip()
     print(f"Generated answer length: {len(answer)} characters")
+    print(f"Generated answer: {answer}")
     
     # Check if the answer indicates insufficient information
     insufficient_info = any(phrase in answer.lower() for phrase in [
