@@ -14,3 +14,4 @@ protobuf>=3.20.0,<4.0.0
 duckdb>=0.8.0,<1.0.0
 pyarrow>=10.0.0,<11.0.0
 pysqlite3-binary
+ratelimit==2.2.1

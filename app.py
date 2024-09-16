@@ -2,6 +2,8 @@ import sys
 import importlib
 import time
 from tenacity import retry, stop_after_attempt, wait_exponential
+from ratelimit import limits, sleep_and_retry
+from functools import lru_cache
 
 try:
     import pysqlite3
@@ -89,6 +91,8 @@ def rewrite_query(question):
         print(f"Error in rewrite_query: {e}")
         raise
 
+@sleep_and_retry
+@limits(calls=100, period=100)
 def google_search(query, num_results=5):
     encoded_query = urllib.parse.quote(query)
     url = f"https://customsearch.googleapis.com/customsearch/v1?key={google_api_key}&cx={google_cse_id}&q={encoded_query}&num={num_results}&fileType=-pdf"
@@ -105,6 +109,10 @@ def google_search(query, num_results=5):
         print(f"Search request failed with status code: {response.status_code}")
         print(f"Response content: {response.text}")
         raise Exception(f"Search request failed with status code: {response.status_code}")
+
+@lru_cache(maxsize=100)
+def cached_google_search(query, num_results=5):
+    return google_search(query, num_results)
 
 def scrape_and_parse(url):
     print(f"Scraping URL: {url}")
@@ -241,7 +249,11 @@ def main():
         with st.spinner("Searching for an answer..."):
             print(f"Processing question: {question}")
             search_query = rewrite_query(question)
-            search_results = google_search(search_query)
+            try:
+                search_results = cached_google_search(search_query)
+            except Exception as e:
+                st.error(f"An error occurred while searching: {str(e)}")
+                return
             
             if not search_results:
                 st.write("No search results found. Please try a different question.")
