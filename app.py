@@ -4,6 +4,7 @@ import time
 from tenacity import retry, stop_after_attempt, wait_exponential
 from ratelimit import limits, sleep_and_retry
 from functools import lru_cache
+import re
 
 try:
     import pysqlite3
@@ -174,6 +175,7 @@ Instructions:
 3. If you don't have enough information to answer the question appropriately, respond with a brief statement indicating that you don't have sufficient information to provide an accurate answer.
 4. Do NOT make up information or guess if you're unsure.
 5. Don't add any HTML tags to your response.
+6. Do NOT use LaTeX formatting or dollar signs for numbers or mathematical expressions. Write all numbers and expressions as plain text.
 
 Here are some examples of how to properly cite sources:
 
@@ -192,6 +194,10 @@ Answer:"""
     print(f"Prompt for final answer: {prompt}")
     response = model.generate_content(prompt)
     answer = response.text.strip()
+    
+    # Remove LaTeX delimiters
+    answer = re.sub(r'\$([^$]+)\$', r'\1', answer)
+    
     print(f"Generated answer length: {len(answer)} characters")
     print(f"Generated answer: {answer}")
     
