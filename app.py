@@ -191,14 +191,13 @@ Now, please answer the given question using the provided context and following t
 Answer:"""
 
     try:
-        # Generate response
         response = model.generate_content(prompt)
         answer = response.text.strip()
         
         # Remove LaTeX delimiters
         answer = re.sub(r'\$([^$]+)\$', r'\1', answer)
         
-        # Check if the answer indicates insufficient information
+        # Check for insufficient information
         insufficient_info_phrases = [
             "don't have enough information",
             "don't have sufficient information",
@@ -208,29 +207,49 @@ Answer:"""
         ]
         insufficient_info = any(phrase in answer.lower() for phrase in insufficient_info_phrases)
         
-        # Initialize list to track used sources
         used_sources = []
         
         if not insufficient_info:
             # Find all citation patterns in the answer
-            # This regex matches both single citations [1] and multiple citations [1, 2, 3]
             citation_pattern = r'\[(?:\d+(?:\s*,\s*\d+)*)\]'
             citations = re.finditer(citation_pattern, answer)
             
-            # Process each citation match
+            # Create a mapping of old citation numbers to new ones
+            citation_map = {}
+            new_answer = answer
+            
+            # First pass: collect all cited sources and create mapping
             for citation_match in citations:
-                citation = citation_match.group(0)  # Get the full citation e.g., "[1]" or "[1, 2, 3]"
-                
-                # Extract all numbers from the citation
+                citation = citation_match.group(0)
                 numbers = [int(num) for num in re.findall(r'\d+', citation)]
                 
-                # Add corresponding sources to used_sources
-                for num in numbers:
-                    if 1 <= num <= len(sources):  # Ensure the citation number is valid
-                        source = sources[num-1]
-                        if source not in used_sources:  # Avoid duplicates while preserving order
+                for old_num in numbers:
+                    if 1 <= old_num <= len(sources):
+                        source = sources[old_num-1]
+                        if source not in used_sources:
                             used_sources.append(source)
+                            # Map old number to new position (1-based index)
+                            citation_map[old_num] = len(used_sources)
+            
+            # Second pass: update citations in the answer
+            for old_num in sorted(citation_map.keys(), reverse=True):  # Process larger numbers first
+                new_num = citation_map[old_num]
+                # Replace [old_num] with [new_num]
+                old_citation = f"[{old_num}]"
+                new_citation = f"[{new_num}]"
+                new_answer = new_answer.replace(old_citation, new_citation)
+                
+                # Also handle cases where the number is part of a multi-citation
+                old_citation_in_list = f"{old_num},"
+                new_citation_in_list = f"{new_num},"
+                new_answer = new_answer.replace(old_citation_in_list, new_citation_in_list)
+                
+                old_citation_in_list_end = f"{old_num}]"
+                new_citation_in_list_end = f"{new_num}]"
+                new_answer = new_answer.replace(old_citation_in_list_end, new_citation_in_list_end)
         
+            answer = new_answer
+            
         # Log for debugging
         print(f"Generated answer length: {len(answer)} characters")
         print(f"Generated answer: {answer}")
