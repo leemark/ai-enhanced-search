@@ -190,32 +190,57 @@ Now, please answer the given question using the provided context and following t
 
 Answer:"""
 
-    print(f"Prompt for final answer: {prompt}")
-    response = model.generate_content(prompt)
-    answer = response.text.strip()
-    
-    # Remove LaTeX delimiters
-    answer = re.sub(r'\$([^$]+)\$', r'\1', answer)
-    
-    print(f"Generated answer length: {len(answer)} characters")
-    print(f"Generated answer: {answer}")
-    
-    # Check if the answer indicates insufficient information
-    insufficient_info = any(phrase in answer.lower() for phrase in [
-        "don't have enough information",
-        "don't have sufficient information",
-        "provided text does not",
-        "cannot answer this question",
-        "do not have enough information"
-    ])
-    
-    # Extract used sources in the order they were cited
-    used_sources = []
-    for i, source in enumerate(sources, start=1):
-        if f"[{i}]" in answer:
-            used_sources.append(source)
-    
-    return answer, insufficient_info, used_sources
+    try:
+        # Generate response
+        response = model.generate_content(prompt)
+        answer = response.text.strip()
+        
+        # Remove LaTeX delimiters
+        answer = re.sub(r'\$([^$]+)\$', r'\1', answer)
+        
+        # Check if the answer indicates insufficient information
+        insufficient_info_phrases = [
+            "don't have enough information",
+            "don't have sufficient information",
+            "provided text does not",
+            "cannot answer this question",
+            "do not have enough information"
+        ]
+        insufficient_info = any(phrase in answer.lower() for phrase in insufficient_info_phrases)
+        
+        # Initialize list to track used sources
+        used_sources = []
+        
+        if not insufficient_info:
+            # Find all citation patterns in the answer
+            # This regex matches both single citations [1] and multiple citations [1, 2, 3]
+            citation_pattern = r'\[(?:\d+(?:\s*,\s*\d+)*)\]'
+            citations = re.finditer(citation_pattern, answer)
+            
+            # Process each citation match
+            for citation_match in citations:
+                citation = citation_match.group(0)  # Get the full citation e.g., "[1]" or "[1, 2, 3]"
+                
+                # Extract all numbers from the citation
+                numbers = [int(num) for num in re.findall(r'\d+', citation)]
+                
+                # Add corresponding sources to used_sources
+                for num in numbers:
+                    if 1 <= num <= len(sources):  # Ensure the citation number is valid
+                        source = sources[num-1]
+                        if source not in used_sources:  # Avoid duplicates while preserving order
+                            used_sources.append(source)
+        
+        # Log for debugging
+        print(f"Generated answer length: {len(answer)} characters")
+        print(f"Generated answer: {answer}")
+        print(f"Sources found: {used_sources}")
+        
+        return answer, insufficient_info, used_sources
+        
+    except Exception as e:
+        print(f"Error in generate_answer: {e}")
+        raise
 
 @retry(stop=stop_after_attempt(4), wait=wait_exponential(multiplier=1, min=4, max=10))
 def generate_followup_questions(question, answer):
