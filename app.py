@@ -162,6 +162,7 @@ def process_search_results(results):
 
 @retry(stop=stop_after_attempt(4), wait=wait_exponential(multiplier=1, min=4, max=10))
 def generate_answer(question, context, sources):
+    # Modify the prompt to more strongly emphasize proper citation usage
     prompt = f"""You are a helpful assistant that answers questions about Colorado College based on information from the CC website. It is currently the 2024-25 academic year. 
 
 Question: {question}
@@ -170,53 +171,94 @@ Context: {context}
 
 Instructions:
 1. If you have enough information to answer the question confidently and accurately, provide a direct answer.
-2. When using information from the context, cite the source using [1], [2], etc. Use each source only once, in the order they appear in the context. ONLY cite sources that are in the context and are used in your answer.
-3. If you don't have enough information to answer the question appropriately, respond with a brief statement indicating that you don't have sufficient information to provide an accurate answer.
-4. Do NOT make up information or guess if you're unsure.
-5. Don't add any HTML tags to your response.
-6. Do NOT use LaTeX formatting or dollar signs for numbers or mathematical expressions. Write all numbers and expressions as plain text.
+2. When using information from the context, cite ONLY the specific source that contains the information you're referencing.
+3. Each citation should point to exactly one source where that specific information came from.
+4. Do NOT combine multiple source numbers in a single citation unless that exact piece of information appears in multiple sources.
+5. If you don't have enough information to answer the question appropriately, say so.
+6. Do NOT make up information or guess if you're unsure.
+7. Don't add any HTML tags to your response.
 
-Here are some examples of how to properly cite sources:
+Example of CORRECT citation usage:
+- Information from first source [1]
+- Different information from second source [2]
+- Another fact from first source [1]
 
-Example 1:
-Question: What are the housing options for first-year students at Colorado College?
-Answer: First-year students at Colorado College are required to live in one of the "Big 3" traditional halls: Mathias Hall, Loomis Hall, or South Hall [1]. These residence halls provide a supportive community environment for new students [2].
+Example of INCORRECT citation usage:
+- Don't cite multiple sources unless necessary [1, 2, 3]
+- Don't cite sources that don't contain the specific information
 
-Example 2:
-Question: How many blocks are in the academic year at Colorado College?
-Answer: Colorado College operates on a unique Block Plan, where the academic year consists of 8 blocks [1]. Each block is 3.5 weeks long, allowing students to focus intensively on one subject at a time [2].
-
-Now, please answer the given question using the provided context and following the instructions above.
+Now, please answer the given question using the provided context and following these citation instructions carefully.
 
 Answer:"""
 
-    print(f"Prompt for final answer: {prompt}")
-    response = model.generate_content(prompt)
-    answer = response.text.strip()
+    try:
+        response = model.generate_content(prompt)
+        answer = response.text.strip()
+        
+        # Remove LaTeX delimiters
+        answer = re.sub(r'\$([^$]+)\$', r'\1', answer)
+        
+        # Check for insufficient information
+        insufficient_info_phrases = [
+            "don't have enough information",
+            "don't have sufficient information",
+            "provided text does not",
+            "cannot answer this question",
+            "do not have enough information"
+        ]
+        insufficient_info = any(phrase in answer.lower() for phrase in insufficient_info_phrases)
+        
+        used_sources = []
+        
+        if not insufficient_info:
+            # Find all unique sources that were actually used
+            source_numbers = set()
+            citation_pattern = r'\[(?:\d+(?:\s*,\s*\d+)*)\]'
+            citations = re.finditer(citation_pattern, answer)
+            
+            for citation_match in citations:
+                citation = citation_match.group(0)
+                numbers = [int(num) for num in re.findall(r'\d+', citation)]
+                for num in numbers:
+                    if 1 <= num <= len(sources):
+                        source_numbers.add(num - 1)  # Convert to 0-based index
+            
+            # Create list of actually used sources
+            used_sources = [sources[i] for i in sorted(source_numbers)]
+            
+            # Replace all citations with the correct source number
+            new_answer = answer
+            source_map = {old_idx + 1: new_idx + 1 
+                         for new_idx, old_idx in enumerate(sorted(source_numbers))}
+            
+            # Replace complex citations with single citations
+            for match in re.finditer(citation_pattern, answer):
+                old_citation = match.group(0)
+                numbers = [int(num) for num in re.findall(r'\d+', old_citation)]
+                # If we have a multi-source citation but only one actual source,
+                # replace it with a single citation
+                if len(used_sources) == 1:
+                    new_citation = "[1]"
+                    new_answer = new_answer.replace(old_citation, new_citation)
+                else:
+                    # Replace with properly numbered citation
+                    new_numbers = [source_map[num] for num in numbers if num in source_map]
+                    if new_numbers:
+                        new_citation = f"[{new_numbers[0]}]"  # Use only first number
+                        new_answer = new_answer.replace(old_citation, new_citation)
+            
+            answer = new_answer
+        
+        print(f"Generated answer length: {len(answer)} characters")
+        print(f"Generated answer: {answer}")
+        print(f"Sources found: {used_sources}")
+        
+        return answer, insufficient_info, used_sources
+        
+    except Exception as e:
+        print(f"Error in generate_answer: {e}")
+        raise
     
-    # Remove LaTeX delimiters
-    answer = re.sub(r'\$([^$]+)\$', r'\1', answer)
-    
-    print(f"Generated answer length: {len(answer)} characters")
-    print(f"Generated answer: {answer}")
-    
-    # Check if the answer indicates insufficient information
-    insufficient_info = any(phrase in answer.lower() for phrase in [
-        "don't have enough information",
-        "don't have sufficient information",
-        "provided text does not",
-        "cannot answer this question",
-        "do not have enough information"
-    ])
-    
-    # Extract used sources in the order they were cited
-    used_sources = []
-    for i, source in enumerate(sources, start=1):
-        if f"[{i}]" in answer:
-            used_sources.append(source)
-    
-    return answer, insufficient_info, used_sources
-
 @retry(stop=stop_after_attempt(4), wait=wait_exponential(multiplier=1, min=4, max=10))
 def generate_followup_questions(question, answer):
     prompt = f"""Based on the question '{question}' and the answer '{answer}', generate 2-3 relevant related questions. 
