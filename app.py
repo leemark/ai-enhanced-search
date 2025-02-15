@@ -5,6 +5,8 @@ from tenacity import retry, stop_after_attempt, wait_exponential
 from ratelimit import limits, sleep_and_retry
 from functools import lru_cache
 import re
+import logging
+from datetime import datetime
 
 try:
     import pysqlite3
@@ -68,10 +70,23 @@ vectorstore = Chroma(
     embedding_function=embeddings
 )
 
-# Add these rate limit decorators for Gemini API calls (15 requests per minute)
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# Modify the rate limit decorators for Gemini API calls
 @sleep_and_retry
-@limits(calls=15, period=60)
-@retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
+@limits(calls=10, period=60)  # Reduced from 15 to 10 calls per minute
+@retry(
+    stop=stop_after_attempt(5),  # Increased from 3 to 5 attempts
+    wait=wait_exponential(multiplier=2, min=4, max=60)  # Increased wait times
+)
 def rewrite_query(question):
     prompt = f"""
     You are a web search query expert who rewrites user questions into concise search queries
@@ -85,13 +100,15 @@ def rewrite_query(question):
 
     Search Query:"""    
     try:
+        # Add delay before API call
+        time.sleep(1)
         response = model.generate_content(prompt)
         rewritten_query = response.text.strip()
-        print(f"Original question: {question}")
-        print(f"Rewritten query: {rewritten_query}")
+        logger.info(f"Original question: {question}")
+        logger.info(f"Rewritten query: {rewritten_query}")
         return rewritten_query
     except Exception as e:
-        print(f"Error in rewrite_query: {e}")
+        logger.error(f"Error in rewrite_query: {e}")
         raise
 
 @sleep_and_retry
@@ -140,10 +157,10 @@ def process_search_results(results):
                 texts.append(content)
                 source_urls.append(url)
             except Exception as e:
-                print(f"Error processing {url}: {e}")
+                logger.error(f"Error processing {url}: {e}")
                 continue
 
-    print(f"Number of successfully processed URLs: {len(source_urls)}")
+    logger.info(f"Number of successfully processed URLs: {len(source_urls)}")
     if texts:
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000,
@@ -164,8 +181,11 @@ def process_search_results(results):
     return docs  # Return the documents instead of just the source URLs
 
 @sleep_and_retry
-@limits(calls=15, period=60)
-@retry(stop=stop_after_attempt(4), wait=wait_exponential(multiplier=1, min=4, max=10))
+@limits(calls=10, period=60)  # Reduced from 15 to 10 calls per minute
+@retry(
+    stop=stop_after_attempt(5),
+    wait=wait_exponential(multiplier=2, min=4, max=60)
+)
 def generate_answer(question, context, sources):
     # Modify the prompt to more strongly instruct the proper citation format:
     prompt = f"""You are a helpful assistant that answers questions about Colorado College based on information from the CC website. It is currently the 2024-25 academic year.
@@ -188,6 +208,8 @@ Now, please answer the given question using the provided context and following t
 Answer:"""
 
     try:
+        # Add delay before API call
+        time.sleep(1)
         response = model.generate_content(prompt)
         answer = response.text.strip()
         
@@ -222,14 +244,14 @@ Answer:"""
         else:
             used_sources = []
         
-        print(f"Generated answer length: {len(answer)} characters")
-        print(f"Generated answer: {answer}")
-        print(f"Sources found: {used_sources}")
+        logger.info(f"Generated answer length: {len(answer)} characters")
+        logger.debug(f"Generated answer: {answer}")
+        logger.info(f"Sources found: {used_sources}")
         
         return answer, insufficient_info, used_sources
         
     except Exception as e:
-        print(f"Error in generate_answer: {e}")
+        logger.error(f"Error in generate_answer: {e}", exc_info=True)
         raise
     
 @sleep_and_retry
@@ -271,13 +293,16 @@ def main():
             st.session_state.update_question = False
             try:
                 with st.spinner("Searching for an answer..."):
-                    print(f"Processing question: {question}")
+                    logger.info(f"Processing question: {question}")
+                    # Add delay between API calls
+                    time.sleep(1)
                     search_query = rewrite_query(question)
+                    time.sleep(1)
                     search_results = cached_google_search(search_query)
                     
                     if not search_results:
                         st.warning("No search results found. Please try a different question.")
-                        print("No search results found.")
+                        logger.warning("No search results found.")
                         return
                     
                     progress_text = st.empty()
@@ -313,8 +338,8 @@ def main():
                         for i, url in enumerate(used_sources, start=1):
                             st.write(f"[{i}] {url}")
             except Exception as e:
+                logger.error("Error in main function", exc_info=True)
                 st.error("We're sorry, but we encountered an issue while processing your request. Please try again later or contact support if the problem persists.")
-                print(f"Error occurred: {str(e)}")
 
 if __name__ == "__main__":
     main()
