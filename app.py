@@ -271,7 +271,7 @@ Third related question"""
     return followup_questions
 
 def main():
-    # Custom CSS for styling
+    # Update the CSS styling
     st.markdown("""
         <style>
         .stTitle {
@@ -296,24 +296,22 @@ def main():
         }
         .stButton button {
             width: 100%;
-            background-color: #FF8B3D;
-            color: white;
+            background-color: #2E2E2E;
+            color: white !important;
             border: none;
-            padding: 0.5rem;
+            padding: 0.75rem;
             border-radius: 5px;
+            margin-bottom: 0.5rem;
         }
         .stButton button:hover {
-            background-color: #E67A2E;
+            background-color: #3E3E3E !important;
+            color: white !important;
         }
         </style>
     """, unsafe_allow_html=True)
 
-    # Title with logo
-    col1, col2 = st.columns([4, 1])
-    with col1:
-        st.title("Ask Colorado College")
-    with col2:
-        st.image("https://www.coloradocollege.edu/themes/custom/cc_theme/logo.svg", width=100)
+    # Replace the logo section with just the title and tiger emoji
+    st.title("Ask Colorado College 🐯")
     
     # Use session state to store the current question and a flag for updates
     if 'current_question' not in st.session_state:
@@ -382,10 +380,8 @@ def main():
                 st.markdown('<div class="related-questions">', unsafe_allow_html=True)
                 st.subheader("📚 Related questions you might be interested in:")
                 followup_questions = generate_followup_questions(question, answer)
-                cols = st.columns(len(followup_questions))
-                for i, (q, col) in enumerate(zip(followup_questions, cols)):
-                    with col:
-                        st.button(q, key=f"followup_{i}", on_click=update_question, args=(q,))
+                for i, q in enumerate(followup_questions):
+                    st.button(q, key=f"followup_{i}", on_click=update_question, args=(q,))
                 st.markdown('</div>', unsafe_allow_html=True)
 
                 # Display sources with improved styling
