@@ -271,7 +271,49 @@ Third related question"""
     return followup_questions
 
 def main():
-    st.title("Ask Colorado College 🐯")
+    # Custom CSS for styling
+    st.markdown("""
+        <style>
+        .stTitle {
+            font-size: 3rem !important;
+            padding-bottom: 2rem;
+        }
+        .source-link {
+            color: #FF8B3D;
+            text-decoration: none;
+        }
+        .source-link:hover {
+            text-decoration: underline;
+        }
+        .answer-container {
+            background-color: #1E1E1E;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .related-questions {
+            margin-top: 2rem;
+        }
+        .stButton button {
+            width: 100%;
+            background-color: #FF8B3D;
+            color: white;
+            border: none;
+            padding: 0.5rem;
+            border-radius: 5px;
+        }
+        .stButton button:hover {
+            background-color: #E67A2E;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+    # Title with logo
+    col1, col2 = st.columns([4, 1])
+    with col1:
+        st.title("Ask Colorado College")
+    with col2:
+        st.image("https://www.coloradocollege.edu/themes/custom/cc_theme/logo.svg", width=100)
     
     # Use session state to store the current question and a flag for updates
     if 'current_question' not in st.session_state:
@@ -279,21 +321,24 @@ def main():
     if 'update_question' not in st.session_state:
         st.session_state.update_question = False
 
-    # Function to update the question
     def update_question(new_question):
         st.session_state.current_question = new_question
         st.session_state.update_question = True
 
-    # Create a form for the text input
+    # Create a form for the text input with custom styling
     with st.form(key='search_form', clear_on_submit=False):
-        question = st.text_input("Enter your question:", value=st.session_state.current_question, key="question_input")
+        question = st.text_input(
+            "Enter your question:",
+            value=st.session_state.current_question,
+            key="question_input",
+            placeholder="e.g., Where can I live on campus?"
+        )
         submit_button = st.form_submit_button('Search', use_container_width=True)
     
-    # Move the processing outside the form
     if submit_button or st.session_state.update_question:
         st.session_state.update_question = False
         try:
-            with st.spinner("Searching for an answer..."):
+            with st.spinner("🔍 Searching for an answer..."):
                 logger.info(f"Processing question: {question}")
                 # Add delay between API calls
                 time.sleep(1)
@@ -327,23 +372,44 @@ def main():
                 answer, insufficient_info, used_sources = generate_answer(question, context, sources)
                 
                 progress_text.empty()
-                st.write("Answer:", answer)
 
-                # Generate and display follow-up questions outside the form
+                # Display answer in a styled container
+                st.markdown('<div class="answer-container">', unsafe_allow_html=True)
+                st.markdown(f"**Answer:** {answer}", unsafe_allow_html=True)
+                st.markdown('</div>', unsafe_allow_html=True)
+
+                # Generate and display follow-up questions with improved styling
+                st.markdown('<div class="related-questions">', unsafe_allow_html=True)
+                st.subheader("📚 Related questions you might be interested in:")
                 followup_questions = generate_followup_questions(question, answer)
-                st.write("Related questions:")
                 cols = st.columns(len(followup_questions))
                 for i, (q, col) in enumerate(zip(followup_questions, cols)):
                     with col:
                         st.button(q, key=f"followup_{i}", on_click=update_question, args=(q,))
+                st.markdown('</div>', unsafe_allow_html=True)
 
+                # Display sources with improved styling
                 if not insufficient_info and used_sources:
-                    st.write("Sources used:")
+                    st.markdown("---")
+                    st.markdown("#### 🔗 Sources:")
                     for i, url in enumerate(used_sources, start=1):
-                        st.write(f"[{i}] {url}")
+                        st.markdown(
+                            f'<a href="{url}" class="source-link" target="_blank">[{i}] {url}</a>',
+                            unsafe_allow_html=True
+                        )
+
         except Exception as e:
             logger.error("Error in main function", exc_info=True)
-            st.error("We're sorry, but we encountered an issue while processing your request. Please try again later or contact support if the problem persists.")
+            st.error("🚫 We're sorry, but we encountered an issue while processing your request. Please try again later or contact support if the problem persists.")
+
+    # Add a helpful initial message when no search has been performed
+    if not submit_button and not st.session_state.update_question:
+        st.markdown("""
+            <div style="text-align: center; padding: 2rem;">
+                <p>👋 Welcome! Ask me anything about Colorado College.</p>
+                <p style="color: #888;">Try asking about housing, academics, campus life, or any other topic!</p>
+            </div>
+        """, unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
