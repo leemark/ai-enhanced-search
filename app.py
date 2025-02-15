@@ -68,6 +68,9 @@ vectorstore = Chroma(
     embedding_function=embeddings
 )
 
+# Add these rate limit decorators for Gemini API calls (15 requests per minute)
+@sleep_and_retry
+@limits(calls=15, period=60)
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=4, max=10))
 def rewrite_query(question):
     prompt = f"""
@@ -160,6 +163,8 @@ def process_search_results(results):
 
     return docs  # Return the documents instead of just the source URLs
 
+@sleep_and_retry
+@limits(calls=15, period=60)
 @retry(stop=stop_after_attempt(4), wait=wait_exponential(multiplier=1, min=4, max=10))
 def generate_answer(question, context, sources):
     # Modify the prompt to more strongly instruct the proper citation format:
@@ -227,6 +232,8 @@ Answer:"""
         print(f"Error in generate_answer: {e}")
         raise
     
+@sleep_and_retry
+@limits(calls=15, period=60)
 @retry(stop=stop_after_attempt(4), wait=wait_exponential(multiplier=1, min=4, max=10))
 def generate_followup_questions(question, answer):
     prompt = f"""Based on the question '{question}' and the answer '{answer}', generate 2-3 relevant related questions. 
