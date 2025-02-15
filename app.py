@@ -288,58 +288,62 @@ def main():
     with st.form(key='search_form', clear_on_submit=False):
         question = st.text_input("Enter your question:", value=st.session_state.current_question, key="question_input")
         submit_button = st.form_submit_button('Search', use_container_width=True)
-        
-        if submit_button or st.session_state.update_question:
-            st.session_state.update_question = False
-            try:
-                with st.spinner("Searching for an answer..."):
-                    logger.info(f"Processing question: {question}")
-                    # Add delay between API calls
-                    time.sleep(1)
-                    search_query = rewrite_query(question)
-                    time.sleep(1)
-                    search_results = cached_google_search(search_query)
-                    
-                    if not search_results:
-                        st.warning("No search results found. Please try a different question.")
-                        logger.warning("No search results found.")
-                        return
-                    
-                    progress_text = st.empty()
-                    progress_text.text("Processing search results...")
-                    docs = process_search_results(search_results)
-                    
-                    if not docs:
-                        st.warning("No valid search results found. Please try a different question.")
-                        print("No valid search results found.")
-                        return
+    
+    # Move the processing outside the form
+    if submit_button or st.session_state.update_question:
+        st.session_state.update_question = False
+        try:
+            with st.spinner("Searching for an answer..."):
+                logger.info(f"Processing question: {question}")
+                # Add delay between API calls
+                time.sleep(1)
+                search_query = rewrite_query(question)
+                time.sleep(1)
+                search_results = cached_google_search(search_query)
+                
+                if not search_results:
+                    st.warning("No search results found. Please try a different question.")
+                    logger.warning("No search results found.")
+                    return
+                
+                progress_text = st.empty()
+                progress_text.text("Processing search results...")
+                docs = process_search_results(search_results)
+                
+                if not docs:
+                    st.warning("No valid search results found. Please try a different question.")
+                    logger.warning("No valid search results found.")
+                    return
 
-                    progress_text.text("Retrieving relevant documents...")
-                    relevant_docs = vectorstore.similarity_search(question, k=3)
-                    print(f"Number of relevant documents retrieved: {len(relevant_docs)}")
-                    context = "\n".join([f"[{i+1}] {doc.page_content}" for i, doc in enumerate(relevant_docs)])
-                    
-                    # Safely extract sources, using a default value if 'source' is not in metadata
-                    sources = [doc.metadata.get('source', f"Source {i+1}") for i, doc in enumerate(relevant_docs)]
-                    
-                    progress_text.text("Generating answer...")
-                    answer, insufficient_info, used_sources = generate_answer(question, context, sources)
-                    
-                    progress_text.empty()
-                    st.write("Answer:", answer)
+                progress_text.text("Retrieving relevant documents...")
+                relevant_docs = vectorstore.similarity_search(question, k=3)
+                logger.info(f"Number of relevant documents retrieved: {len(relevant_docs)}")
+                context = "\n".join([f"[{i+1}] {doc.page_content}" for i, doc in enumerate(relevant_docs)])
+                
+                # Safely extract sources, using a default value if 'source' is not in metadata
+                sources = [doc.metadata.get('source', f"Source {i+1}") for i, doc in enumerate(relevant_docs)]
+                
+                progress_text.text("Generating answer...")
+                answer, insufficient_info, used_sources = generate_answer(question, context, sources)
+                
+                progress_text.empty()
+                st.write("Answer:", answer)
 
-                    followup_questions = generate_followup_questions(question, answer)
-                    st.write("Related questions:")
-                    for i, q in enumerate(followup_questions):
+                # Generate and display follow-up questions outside the form
+                followup_questions = generate_followup_questions(question, answer)
+                st.write("Related questions:")
+                cols = st.columns(len(followup_questions))
+                for i, (q, col) in enumerate(zip(followup_questions, cols)):
+                    with col:
                         st.button(q, key=f"followup_{i}", on_click=update_question, args=(q,))
 
-                    if not insufficient_info and used_sources:
-                        st.write("Sources used:")
-                        for i, url in enumerate(used_sources, start=1):
-                            st.write(f"[{i}] {url}")
-            except Exception as e:
-                logger.error("Error in main function", exc_info=True)
-                st.error("We're sorry, but we encountered an issue while processing your request. Please try again later or contact support if the problem persists.")
+                if not insufficient_info and used_sources:
+                    st.write("Sources used:")
+                    for i, url in enumerate(used_sources, start=1):
+                        st.write(f"[{i}] {url}")
+        except Exception as e:
+            logger.error("Error in main function", exc_info=True)
+            st.error("We're sorry, but we encountered an issue while processing your request. Please try again later or contact support if the problem persists.")
 
 if __name__ == "__main__":
     main()
