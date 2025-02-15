@@ -162,8 +162,8 @@ def process_search_results(results):
 
 @retry(stop=stop_after_attempt(4), wait=wait_exponential(multiplier=1, min=4, max=10))
 def generate_answer(question, context, sources):
-    # Modify the prompt to more strongly emphasize proper citation usage
-    prompt = f"""You are a helpful assistant that answers questions about Colorado College based on information from the CC website. It is currently the 2024-25 academic year. 
+    # Modify the prompt to more strongly instruct the proper citation format:
+    prompt = f"""You are a helpful assistant that answers questions about Colorado College based on information from the CC website. It is currently the 2024-25 academic year.
 
 Question: {question}
 
@@ -173,19 +173,10 @@ Instructions:
 1. If you have enough information to answer the question confidently and accurately, provide a direct answer.
 2. When using information from the context, cite ONLY the specific source that contains the information you're referencing.
 3. Each citation should point to exactly one source where that specific information came from.
-4. Do NOT combine multiple source numbers in a single citation unless that exact piece of information appears in multiple sources.
+4. Do NOT combine multiple source numbers in a single citation. Always provide citations using a SINGLE [number] immediately after the referenced sentence.
 5. If you don't have enough information to answer the question appropriately, say so.
 6. Do NOT make up information or guess if you're unsure.
 7. Don't add any HTML tags to your response.
-
-Example of CORRECT citation usage:
-- Information from first source [1]
-- Different information from second source [2]
-- Another fact from first source [1]
-
-Example of INCORRECT citation usage:
-- Don't cite multiple sources unless necessary [1, 2, 3]
-- Don't cite sources that don't contain the specific information
 
 Now, please answer the given question using the provided context and following these citation instructions carefully.
 
@@ -208,46 +199,23 @@ Answer:"""
         ]
         insufficient_info = any(phrase in answer.lower() for phrase in insufficient_info_phrases)
         
-        used_sources = []
-        
         if not insufficient_info:
-            # Find all unique sources that were actually used
-            source_numbers = set()
-            citation_pattern = r'\[(?:\d+(?:\s*,\s*\d+)*)\]'
-            citations = re.finditer(citation_pattern, answer)
-            
-            for citation_match in citations:
-                citation = citation_match.group(0)
-                numbers = [int(num) for num in re.findall(r'\d+', citation)]
-                for num in numbers:
-                    if 1 <= num <= len(sources):
-                        source_numbers.add(num - 1)  # Convert to 0-based index
-            
-            # Create list of actually used sources
-            used_sources = [sources[i] for i in sorted(source_numbers)]
-            
-            # Replace all citations with the correct source number
-            new_answer = answer
-            source_map = {old_idx + 1: new_idx + 1 
-                         for new_idx, old_idx in enumerate(sorted(source_numbers))}
-            
-            # Replace complex citations with single citations
-            for match in re.finditer(citation_pattern, answer):
-                old_citation = match.group(0)
-                numbers = [int(num) for num in re.findall(r'\d+', old_citation)]
-                # If we have a multi-source citation but only one actual source,
-                # replace it with a single citation
-                if len(used_sources) == 1:
-                    new_citation = "[1]"
-                    new_answer = new_answer.replace(old_citation, new_citation)
-                else:
-                    # Replace with properly numbered citation
-                    new_numbers = [source_map[num] for num in numbers if num in source_map]
-                    if new_numbers:
-                        new_citation = f"[{new_numbers[0]}]"  # Use only first number
-                        new_answer = new_answer.replace(old_citation, new_citation)
-            
-            answer = new_answer
+            # Improved citation extraction: match citations in the form [number] and re-map sequentially
+            citation_pattern = r'\[(\d+)\]'
+            citation_map = {}  # mapping from original citation number to new sequential number
+
+            def replace_citation(match):
+                original = int(match.group(1))
+                if 1 <= original <= len(sources):
+                    if original not in citation_map:
+                        citation_map[original] = len(citation_map) + 1  # assign next sequential number
+                    return f"[{citation_map[original]}]"
+                return match.group(0)
+
+            answer = re.sub(citation_pattern, replace_citation, answer)
+            used_sources = [sources[orig - 1] for orig, new_num in sorted(citation_map.items(), key=lambda x: x[1])]
+        else:
+            used_sources = []
         
         print(f"Generated answer length: {len(answer)} characters")
         print(f"Generated answer: {answer}")
