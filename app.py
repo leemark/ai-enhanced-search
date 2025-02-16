@@ -162,14 +162,56 @@ def process_search_results(results):
 
     logger.info(f"Number of successfully processed URLs: {len(source_urls)}")
     if texts:
+        # Define separators in priority order
+        separators = [
+            "\n\n",  # Double line breaks (paragraphs)
+            "\n",    # Single line breaks
+            ". ",    # Sentences
+            ", ",    # Clauses
+            " "      # Words (last resort)
+        ]
+        
+        # Initialize text splitter with improved configuration
         text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=1000,
-            chunk_overlap=100,
+            separators=separators,
+            chunk_size=1500,  # Increased for better context
+            chunk_overlap=200,  # Increased overlap for better context preservation
             length_function=len,
             is_separator_regex=False,
+            add_start_index=True,  # Track position in original text
         )
-        docs = text_splitter.create_documents(texts, metadatas=[{"source": url} for url in source_urls])
+        
+        # Create documents with enhanced metadata
+        docs = []
+        for text, url in zip(texts, source_urls):
+            # Get text length for dynamic chunk size adjustment
+            text_length = len(text)
+            
+            # Adjust chunk size based on text length
+            if text_length < 3000:
+                chunk_size = 1000  # Smaller chunks for shorter texts
+            elif text_length < 10000:
+                chunk_size = 1500  # Medium chunks for medium texts
+            else:
+                chunk_size = 2000  # Larger chunks for longer texts
+            
+            # Update text splitter configuration
+            text_splitter.chunk_size = chunk_size
+            
+            # Create chunks with enhanced metadata
+            chunks = text_splitter.create_documents(
+                [text],
+                metadatas=[{
+                    "source": url,
+                    "text_length": text_length,
+                    "chunk_size": chunk_size,
+                    "timestamp": datetime.now().isoformat(),
+                }]
+            )
+            docs.extend(chunks)
+        
         print(f"Number of documents created: {len(docs)}")
+        logger.info(f"Average chunk size: {sum(len(doc.page_content) for doc in docs) / len(docs):.0f} characters")
         
         # Add documents in one batch
         with st.spinner("Adding documents to vector store..."):
